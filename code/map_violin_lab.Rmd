@@ -1,0 +1,212 @@
+---
+title: "ENV H 504: Data visualization lab"
+output: html_document
+knit: (function(inputFile, encoding) { proj_root <- dirname(dirname(normalizePath(inputFile))); rmarkdown::render(inputFile, encoding = encoding, output_dir = file.path(proj_root, "output")) })
+---
+
+The purpose of this lab is to build familiarity with plotting in R. This lab walks through building three panels with a map and violin plot on each panel. We'll use California counties, simulated data, and then packages `geom_sf()` for maps and `geom_violin()` for distributions. We then use `cowplot` to compile our final figure.
+
+## setup: path and packages
+
+we will set the data path here. we use a default `"."` which just means right here. In this lab, this will work well as we generate and use synthetic data that we save in memory. For your own work, you may need to set `data_path` to your folder.
+
+```{r setup, include=FALSE}
+#------------------------------------------------------------------------------
+# data path
+data_path <- "."
+#------------------------------------------------------------------------------
+# cache tigris downloads for faster reruns:
+# this is a good idea for repeated runs of the same code so you don't
+# have to download the data every time.
+options(tigris_use_cache = TRUE)
+
+#------------------------------------------------------------------------------
+# packages -- make sure you have pacman installed
+library(pacman) # `install.packages("pacman")` if neded
+p_load(ggplot2, dplyr, tidyr, sf, tigris, cowplot, scales, lubridate)
+
+# Color palette
+pal <- c('#6f9969', '#efc86e', '#0f7ba2')  # green, yellow, blue
+crs <- "EPSG:3310"  # California Albers Equal Area
+```
+
+## step 1: load spatial data
+
+now we will load California and its counties using `tigris`.
+
+```{r load-spatial, warning=FALSE, message=FALSE}
+ca_shp <- states(cb = TRUE, year = 2020) %>%
+  filter(NAME == "California") %>%
+  st_transform(crs)
+
+county_shp <- counties(state = "CA", cb = TRUE, year = 2020) %>%
+  rename(county_id = GEOID) %>%
+  select(county_id, NAME, geometry) %>%
+  st_transform(crs)
+
+# clip state to counties to remove water
+ca_shp <- ca_shp %>% st_intersection(county_shp)
+```
+
+## step 2: create exposure summary data
+
+now we will create some exposure summary data. we will make plots of the count of days with the exposure. in this case, we are looking at public safety power shutoffs (PSPS) and wildfire smoke. PSPS events are planned power outages to prevent wildfires, however they often do end up co-occurring with wildfire smoke events. here we will visualize how many days each county experienced (1) PSPS event, (2) wildfire smoke, and (3) both PSPS and wildfire smoke. to do this, we need counts of "exposure-days" by geography and exposure type. here we use **synthetic data** so the lab runs without external files. in practice, you'd load this from your own exposure dataset. we will use `expand_grid()` to create a grid of all possible combinations of county and exposure type, and then use `mutate()` to create the `n_days` column. we will then filter out any counties with no exposure days.
+
+```{r create-exposure-summary, warning=FALSE, message=FALSE}
+# synthetic exposure data: county_id, exposure_type, n_days
+set.seed(42)
+exp_summary <- expand_grid(
+  county_id = county_shp$county_id,
+  exposure_type = c("PSPS event only", "WF smoke only", "WF smoke + PSPS event")
+) %>%
+  mutate(
+    n_days = case_when(
+      exposure_type == "PSPS event only" ~ pmax(0, as.integer(rnorm(n(), 20, 15))),
+      exposure_type == "WF smoke only"   ~ pmax(0, as.integer(rnorm(n(), 80, 50))),
+      TRUE ~ pmax(0, as.integer(rnorm(n(), 25, 20)))
+    )
+  ) %>%
+  filter(n_days > 0)  # keep only counties with some exposure
+
+# join to geometry
+exp_sum_shp <- exp_summary %>%
+  left_join(county_shp %>% select(county_id, geometry), by = "county_id") %>%
+  st_as_sf() %>%
+  st_transform(crs)
+```
+
+## step 3: a simple map
+
+let's start with just a simple map of California showing just one of our exposures -- wildfire smoke (`filter(exposure_type == "WF smoke only")`). We will use `geom_sf()` to create our map, and then use `aes(fill = n_days)` to map the variable we want to show (here, `n_days`).
+
+```{r simple-map, warning=FALSE, message=FALSE}
+ggplot(exp_sum_shp %>% filter(exposure_type == "WF smoke only")) +
+  geom_sf(aes(fill = n_days)) +
+  theme_minimal()
+```
+
+## step 4: add state outline and improve the fill scale
+
+now let's add the county boundaries and a gradient from light to dark. we will use `scale_fill_gradient()` for continuous variables.
+
+```{r map-with-outline, warning=FALSE, message=FALSE}
+ggplot() +
+  geom_sf(data = exp_sum_shp %>% filter(exposure_type == "WF smoke only"),
+          aes(fill = n_days)) +
+  geom_sf(data = county_shp, fill = NA, color = alpha("grey", 0.5), linewidth = 0.3) +
+  scale_fill_gradient(
+    low = "#fef7e6",
+    high = pal[3],
+    name = "# days",
+    labels = comma_format(accuracy = 1)
+  ) +
+  theme_minimal()
+```
+
+## step 5: a simple violin plot
+
+it can be hard to get a sense of the distribution of the days on the map, despite it showing us where the exposure is higher and lower very well. so, let's add a violin plot to show the distribution of `n_days` under the map. we will use `geom_violin()` with `x = n_days` and a constant `y` to get a horizontal violin. let's create the violin for only wildfire smoke first (`filter(exposure_type == "WF smoke only")`).
+
+```{r simple-violin, warning=FALSE, message=FALSE}
+violin_data <- exp_sum_shp %>% filter(exposure_type == "WF smoke only")
+
+ggplot(violin_data, aes(x = n_days, y = 1)) +
+  geom_violin(fill = NA, color = pal[3], linewidth = 0.5) +
+  theme_minimal() +
+  scale_x_continuous(labels = comma_format(accuracy = 1))
+```
+
+## step 6: stack map and violin with cowplot
+
+now let's stack the map and violin plots vertically using `plot_grid()` from cowplot. we will do this for each of our three panels, but will continue with just wildfire smoke for now (`filter(exposure_type == "WF smoke only")`). the `rel_heights` argument controls the relative height of each plot. the chunk dimensions match one panel of the final figure so the violin aligns with the map.
+
+NOTE: we use cowplot instead of patchwork because it tends to produce more predictable layouts when combining maps with other plots. you can try this with patchwork and you will see that it can create issues with the layout.
+
+```{r stacked-panel, fig.width=4, fig.height=6, warning=FALSE, message=FALSE}
+map_plot <- ggplot() +
+  geom_sf(data = exp_sum_shp %>% filter(exposure_type == "WF smoke only"),
+          aes(fill = n_days)) +
+  geom_sf(data = county_shp, fill = NA, color = alpha("grey", 0.5), linewidth = 0.3) +
+  scale_fill_gradient(low = "#fef7e6", high = pal[3], name = "# days",
+                     labels = comma_format(accuracy = 1)) +
+  theme_minimal() +
+  theme(axis.text = element_blank(), axis.ticks = element_blank(),
+        panel.grid = element_blank(), legend.position = "bottom")
+
+violin_plot <- ggplot(violin_data, aes(x = n_days, y = 1)) +
+  geom_violin(fill = NA, color = pal[3], linewidth = 0.5) +
+  theme_minimal() +
+  theme(axis.text = element_blank(), axis.title = element_blank(),
+        panel.grid = element_blank(), aspect.ratio = 0.2) +
+  scale_x_continuous(labels = comma_format(accuracy = 1))
+
+# stack: map on top, violin below (rel_heights gives map 4x the space of violin)
+plot_grid(map_plot, violin_plot, ncol = 1, align = "v", rel_heights = c(4, 1))
+```
+
+## step 7: build all three panels and combine
+
+now let's build all three panels and combine them side by side with `plot_grid()`. the chunk dimensions (12 × 6) ensure violin widths align with maps. we will use a loop to create each panel, and then combine them side by side with `plot_grid()`.
+
+```{r loop-panels, fig.width=12, fig.height=6, warning=FALSE, message=FALSE}
+exposure_types <- c("PSPS event only", "WF smoke only", "WF smoke + PSPS event")
+
+map_plots <- list()
+violin_plots <- list()
+
+for (i in seq_along(exposure_types)) {
+  exp_type <- exposure_types[i]
+  exp_color <- case_when(
+    exp_type == "WF smoke + PSPS event" ~ pal[1],
+    exp_type == "PSPS event only"       ~ pal[2],
+    TRUE ~ pal[3]
+  )
+
+  exp_data <- exp_sum_shp %>% filter(exposure_type == exp_type)
+
+  map_plots[[i]] <- ggplot() +
+    geom_sf(data = exp_data, aes(fill = n_days)) +
+    geom_sf(data = county_shp, fill = NA, color = alpha("grey", 0.5), linewidth = 0.3) +
+    scale_fill_gradient(low = "#fef7e6", high = exp_color,
+                       name = "# days", labels = comma_format(accuracy = 1)) +
+    labs(title = exp_type) +
+    theme_minimal() +
+    theme(axis.text = element_blank(), axis.ticks = element_blank(),
+          panel.grid = element_blank(), plot.title = element_text(size = 14, hjust = 0),
+          legend.position = "bottom")
+
+  violin_plots[[i]] <- ggplot(exp_data, aes(x = n_days, y = 1)) +
+    geom_violin(fill = NA, color = exp_color, linewidth = 0.5) +
+    theme_minimal() +
+    theme(axis.text = element_blank(), axis.title = element_blank(),
+          panel.grid = element_blank(), aspect.ratio = 0.2,
+          plot.margin = margin(0)) +
+    scale_x_continuous(labels = comma_format(accuracy = 1))
+}
+
+# Build each panel: map stacked on violin; then place side by side
+panel1 <- plot_grid(map_plots[[1]], violin_plots[[1]], ncol = 1, align = "v", rel_heights = c(4, 1))
+panel2 <- plot_grid(map_plots[[2]], violin_plots[[2]], ncol = 1, align = "v", rel_heights = c(4, 1))
+panel3 <- plot_grid(map_plots[[3]], violin_plots[[3]], ncol = 1, align = "v", rel_heights = c(4, 1))
+
+combined <- plot_grid(panel1, panel2, panel3, ncol = 3, align = "h", rel_widths = c(1, 1, 1))
+
+combined
+```
+
+## step 8: save the figure
+
+```{r save-figure, warning=FALSE, message=FALSE}
+# create output folder if needed
+if (!dir.exists("output")) dir.create("output")
+
+ggsave("output/map_violin_panels.pdf",
+       combined, width = 12, height = 6, dpi = 100)
+```
+
+## summary
+
+- `geom_sf()` for mapping
+- `scale_fill_gradient()` for continuous fill
+- `geom_violin()` for distributions
+- `cowplot::plot_grid()` to stack and arrange plots (often more reliable than patchwork for complicated map + other-plot combinations)
