@@ -4,13 +4,13 @@ output: html_document
 knit: (function(inputFile, encoding) { proj_root <- dirname(dirname(normalizePath(inputFile))); rmarkdown::render(inputFile, encoding = encoding, output_dir = file.path(proj_root, "output")) })
 ---
 
-The purpose of this lab is to build familiarity with plotting in R. This lab walks through building three panels with a map and violin plot on each panel. We'll use California counties, simulated data, and then packages `geom_sf()` for maps and `geom_violin()` for distributions. We then use `cowplot` to compile our final figure.
+The purpose of this lab is to build familiarity with plotting in R to create figures for grant proposals. This lab walks through building three panels with a map and violin plot on each panel. We'll use California counties, simulated data, and then packages `geom_sf()` for maps and `geom_violin()` for distributions. We then use `cowplot` to compile our final figure.
 
 ## setup: path and packages
 
-we will set the data path here. we use a default `"."` which just means right here. In this lab, this will work well as we generate and use synthetic data that we save in memory. For your own work, you may need to set `data_path` to your folder.
+we will set the data path here. we use a default `"."` which just means right here. in this lab, this will work well as we generate and use synthetic data that we save in memory. for your own work, you may need to set `data_path` to your folder. here we also choose a palette that matches the palette for the manuscript we were working on -- you can use online color palette tools to find a palette that matches your data, such as `metbrewer` or `colorbrewer`.
 
-```{r setup, include=FALSE}
+```{r setup, include=TRUE}
 #------------------------------------------------------------------------------
 # data path
 data_path <- "."
@@ -50,23 +50,23 @@ ca_shp <- ca_shp %>% st_intersection(county_shp)
 
 ## step 2: create exposure summary data
 
-now we will create some exposure summary data. we will make plots of the count of days with the exposure. in this case, we are looking at public safety power shutoffs (PSPS) and wildfire smoke. PSPS events are planned power outages to prevent wildfires, however they often do end up co-occurring with wildfire smoke events. here we will visualize how many days each county experienced (1) PSPS event, (2) wildfire smoke, and (3) both PSPS and wildfire smoke. to do this, we need counts of "exposure-days" by geography and exposure type. here we use **synthetic data** so the lab runs without external files. in practice, you'd load this from your own exposure dataset. we will use `expand_grid()` to create a grid of all possible combinations of county and exposure type, and then use `mutate()` to create the `n_days` column. we will then filter out any counties with no exposure days.
+now we will create some exposure summary data. we will make plots of the count of days with the exposure. in this case, we are looking at public safety power shutoffs (PSPS) and wildfire smoke. PSPS events are planned power outages to prevent wildfires, however they often do end up co-occurring with wildfire smoke (any estimated wildfire PM<sub>2.5</sub> concentration). here we will visualize how many days each county experienced (1) PSPS event alone, (2) wildfire smoke alone, and (3) both PSPS and wildfire smoke. to do this, we need counts of "exposure-days" by geography and exposure type. here we use **synthetic data** so the lab runs without external files. in practice, you'd load this from your own exposure dataset. we will use `expand_grid()` to create a grid of all possible combinations of county and exposure type, and then use `mutate()` to create the `n_days` column. we keep every county in the grid so maps show the full state (some counties may have zero exposure days).
 
 ```{r create-exposure-summary, warning=FALSE, message=FALSE}
 # synthetic exposure data: county_id, exposure_type, n_days
 set.seed(42)
 exp_summary <- expand_grid(
   county_id = county_shp$county_id,
-  exposure_type = c("PSPS event only", "WF smoke only", "WF smoke + PSPS event")
+  exposure_type = c("PSPS event alone", "WF smoke alone", "WF smoke + PSPS event")
 ) %>%
   mutate(
     n_days = case_when(
-      exposure_type == "PSPS event only" ~ pmax(0, as.integer(rnorm(n(), 20, 15))),
-      exposure_type == "WF smoke only"   ~ pmax(0, as.integer(rnorm(n(), 80, 50))),
-      TRUE ~ pmax(0, as.integer(rnorm(n(), 25, 20)))
+      exposure_type == "PSPS event alone" ~ pmax(0L, as.integer(rnorm(n(), 20, 15))),
+      exposure_type == "WF smoke alone"   ~ pmax(0L, as.integer(rnorm(n(), 80, 50))),
+      TRUE ~ pmax(0L, as.integer(rnorm(n(), 25, 20)))
     )
-  ) %>%
-  filter(n_days > 0)  # keep only counties with some exposure
+  )
+  # do not drop rows with n_days == 0: otherwise random zeros remove counties from the map
 
 # join to geometry
 exp_sum_shp <- exp_summary %>%
@@ -77,7 +77,7 @@ exp_sum_shp <- exp_summary %>%
 
 ## step 3: a simple map
 
-let's start with just a simple map of California showing just one of our exposures -- wildfire smoke (`filter(exposure_type == "WF smoke only")`). We will use `geom_sf()` to create our map, and then use `aes(fill = n_days)` to map the variable we want to show (here, `n_days`).
+let's start with just a simple map of California showing just one of our exposures -- wildfire smoke (`filter(exposure_type == "WF smoke only")`). we will use `geom_sf()` to create our map, and then use `aes(fill = n_days)` to map the variable we want to show (here, `n_days`).
 
 ```{r simple-map, warning=FALSE, message=FALSE}
 ggplot(exp_sum_shp %>% filter(exposure_type == "WF smoke only")) +
@@ -184,7 +184,7 @@ for (i in seq_along(exposure_types)) {
     scale_x_continuous(labels = comma_format(accuracy = 1))
 }
 
-# Build each panel: map stacked on violin; then place side by side
+# build each panel: map stacked on violin; then place side by side
 panel1 <- plot_grid(map_plots[[1]], violin_plots[[1]], ncol = 1, align = "v", rel_heights = c(4, 1))
 panel2 <- plot_grid(map_plots[[2]], violin_plots[[2]], ncol = 1, align = "v", rel_heights = c(4, 1))
 panel3 <- plot_grid(map_plots[[3]], violin_plots[[3]], ncol = 1, align = "v", rel_heights = c(4, 1))
@@ -198,9 +198,7 @@ combined
 
 ```{r save-figure, warning=FALSE, message=FALSE}
 # create output folder if needed
-if (!dir.exists("output")) dir.create("output")
-
-ggsave("output/map_violin_panels.pdf",
+ggsave("../output/map_violin_panels.pdf",
        combined, width = 12, height = 6, dpi = 100)
 ```
 
