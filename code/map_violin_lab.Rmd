@@ -23,10 +23,14 @@ options(tigris_use_cache = TRUE)
 #------------------------------------------------------------------------------
 # packages -- make sure you have pacman installed
 library(pacman) # `install.packages("pacman")` if neded
-p_load(ggplot2, dplyr, tidyr, sf, tigris, cowplot, scales, lubridate)
+p_load(ggplot2, dplyr, tidyr, sf, tigris, cowplot, scales, lubridate, MetBrewer, viridis)
 
 # Color palette
-pal <- c('#6f9969', '#efc86e', '#0f7ba2')  # green, yellow, blue
+pal <- met.brewer("Java", n = 3)
+
+# Check that we're using colorblind-friendly colors
+colorblind.friendly("Java")
+
 crs <- "EPSG:3310"  # California Albers Equal Area
 ```
 
@@ -82,6 +86,7 @@ let's start with just a simple map of California showing just one of our exposur
 ```{r simple-map, warning=FALSE, message=FALSE}
 ggplot(exp_sum_shp %>% filter(exposure_type == "WF smoke alone")) +
   geom_sf(aes(fill = n_days)) +
+  scale_fill_viridis_c(option = "magma", direction = -1) +
   theme_minimal()
 ```
 
