@@ -77,10 +77,10 @@ exp_sum_shp <- exp_summary %>%
 
 ## step 3: a simple map
 
-let's start with just a simple map of California showing just one of our exposures -- wildfire smoke (`filter(exposure_type == "WF smoke only")`). we will use `geom_sf()` to create our map, and then use `aes(fill = n_days)` to map the variable we want to show (here, `n_days`).
+let's start with just a simple map of California showing just one of our exposures -- wildfire smoke (`filter(exposure_type == "WF smoke alone")`). we will use `geom_sf()` to create our map, and then use `aes(fill = n_days)` to map the variable we want to show (here, `n_days`).
 
 ```{r simple-map, warning=FALSE, message=FALSE}
-ggplot(exp_sum_shp %>% filter(exposure_type == "WF smoke only")) +
+ggplot(exp_sum_shp %>% filter(exposure_type == "WF smoke alone")) +
   geom_sf(aes(fill = n_days)) +
   theme_minimal()
 ```
@@ -91,7 +91,7 @@ now let's add the county boundaries and a gradient from light to dark. we will u
 
 ```{r map-with-outline, warning=FALSE, message=FALSE}
 ggplot() +
-  geom_sf(data = exp_sum_shp %>% filter(exposure_type == "WF smoke only"),
+  geom_sf(data = exp_sum_shp %>% filter(exposure_type == "WF smoke alone"),
           aes(fill = n_days)) +
   geom_sf(data = county_shp, fill = NA, color = alpha("grey", 0.5), linewidth = 0.3) +
   scale_fill_gradient(
@@ -105,10 +105,10 @@ ggplot() +
 
 ## step 5: a simple violin plot
 
-it can be hard to get a sense of the distribution of the days on the map, despite it showing us where the exposure is higher and lower very well. so, let's add a violin plot to show the distribution of `n_days` under the map. we will use `geom_violin()` with `x = n_days` and a constant `y` to get a horizontal violin. let's create the violin for only wildfire smoke first (`filter(exposure_type == "WF smoke only")`).
+it can be hard to get a sense of the distribution of the days on the map, despite it showing us where the exposure is higher and lower very well. so, let's add a violin plot to show the distribution of `n_days` under the map. we will use `geom_violin()` with `x = n_days` and a constant `y` to get a horizontal violin. let's create the violin for only wildfire smoke first (`filter(exposure_type == "WF smoke alone")`).
 
 ```{r simple-violin, warning=FALSE, message=FALSE}
-violin_data <- exp_sum_shp %>% filter(exposure_type == "WF smoke only")
+violin_data <- exp_sum_shp %>% filter(exposure_type == "WF smoke alone")
 
 ggplot(violin_data, aes(x = n_days, y = 1)) +
   geom_violin(fill = NA, color = pal[3], linewidth = 0.5) +
@@ -118,13 +118,13 @@ ggplot(violin_data, aes(x = n_days, y = 1)) +
 
 ## step 6: stack map and violin with cowplot
 
-now let's stack the map and violin plots vertically using `plot_grid()` from cowplot. we will do this for each of our three panels, but will continue with just wildfire smoke for now (`filter(exposure_type == "WF smoke only")`). the `rel_heights` argument controls the relative height of each plot. the chunk dimensions match one panel of the final figure so the violin aligns with the map.
+now let's stack the map and violin plots vertically using `plot_grid()` from cowplot. we will do this for each of our three panels, but will continue with just wildfire smoke for now (`filter(exposure_type == "WF smoke alone")`). the `rel_heights` argument controls the relative height of each plot. the chunk dimensions match one panel of the final figure so the violin aligns with the map.
 
 NOTE: we use cowplot instead of patchwork because it tends to produce more predictable layouts when combining maps with other plots. you can try this with patchwork and you will see that it can create issues with the layout.
 
 ```{r stacked-panel, fig.width=4, fig.height=6, warning=FALSE, message=FALSE}
 map_plot <- ggplot() +
-  geom_sf(data = exp_sum_shp %>% filter(exposure_type == "WF smoke only"),
+  geom_sf(data = exp_sum_shp %>% filter(exposure_type == "WF smoke alone"),
           aes(fill = n_days)) +
   geom_sf(data = county_shp, fill = NA, color = alpha("grey", 0.5), linewidth = 0.3) +
   scale_fill_gradient(low = "#fef7e6", high = pal[3], name = "# days",
@@ -149,7 +149,7 @@ plot_grid(map_plot, violin_plot, ncol = 1, align = "v", rel_heights = c(4, 1))
 now let's build all three panels and combine them side by side with `plot_grid()`. the chunk dimensions (12 × 6) ensure violin widths align with maps. we will use a loop to create each panel, and then combine them side by side with `plot_grid()`.
 
 ```{r loop-panels, fig.width=12, fig.height=6, warning=FALSE, message=FALSE}
-exposure_types <- c("PSPS event only", "WF smoke only", "WF smoke + PSPS event")
+exposure_types <- c("PSPS event alone", "WF smoke alone", "WF smoke + PSPS event")
 
 map_plots <- list()
 violin_plots <- list()
@@ -158,7 +158,7 @@ for (i in seq_along(exposure_types)) {
   exp_type <- exposure_types[i]
   exp_color <- case_when(
     exp_type == "WF smoke + PSPS event" ~ pal[1],
-    exp_type == "PSPS event only"       ~ pal[2],
+    exp_type == "PSPS event alone"       ~ pal[2],
     TRUE ~ pal[3]
   )
 
