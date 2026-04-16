@@ -32,6 +32,15 @@ pal <- met.brewer("Java", n = 3)
 colorblind.friendly("Java")
 
 crs <- "EPSG:3310"  # California Albers Equal Area
+
+# Bottom colourbar length: default is much shorter than the map panel; match panel width
+# so it lines up with the violins when plots are stacked with cowplot.
+map_legend_guide <- guide_colourbar(
+  theme = theme(
+    legend.key.width  = unit(0.6, "npc"),
+    legend.key.height = unit(0.35, "cm")
+  )
+)
 ```
 
 ## step 1: load spatial data
@@ -102,7 +111,7 @@ ggplot() +
   scale_fill_gradient(
     low = "#fef7e6",
     high = pal[3],
-    name = "# days",
+    name = NULL,
     labels = comma_format(accuracy = 1)
   ) +
   theme_minimal()
@@ -132,8 +141,9 @@ map_plot <- ggplot() +
   geom_sf(data = exp_sum_shp %>% filter(exposure_type == "WF smoke alone"),
           aes(fill = n_days)) +
   geom_sf(data = county_shp, fill = NA, color = alpha("grey", 0.5), linewidth = 0.3) +
-  scale_fill_gradient(low = "#fef7e6", high = pal[3], name = "# days",
-                     labels = comma_format(accuracy = 1)) +
+  scale_fill_gradient(low = "#fef7e6", high = pal[3], name = NULL,
+                     labels = comma_format(accuracy = 1),
+                     guide = map_legend_guide) +
   theme_minimal() +
   theme(axis.text = element_blank(), axis.ticks = element_blank(),
         panel.grid = element_blank(), legend.position = "bottom")
@@ -173,7 +183,8 @@ for (i in seq_along(exposure_types)) {
     geom_sf(data = exp_data, aes(fill = n_days)) +
     geom_sf(data = county_shp, fill = NA, color = alpha("grey", 0.5), linewidth = 0.3) +
     scale_fill_gradient(low = "#fef7e6", high = exp_color,
-                       name = "# days", labels = comma_format(accuracy = 1)) +
+                       name = NULL, labels = comma_format(accuracy = 1),
+                       guide = map_legend_guide) +
     labs(title = exp_type) +
     theme_minimal() +
     theme(axis.text = element_blank(), axis.ticks = element_blank(),
